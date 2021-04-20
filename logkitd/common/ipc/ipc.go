@@ -103,17 +103,23 @@ func (i *Ipc) Stop() {
 	return
 }
 
-func (i *Ipc) SendMsg(msg *Message) {
+func (i *Ipc) SendMsg(msg *Message) error {
 	if msg.MsgId == 0 {
 		id := i.GetMsgId()
 		msg.MsgId = id
 	}
 
-	i.SendCh <- msg
+	if closed := SafeSend(i.SendCh, msg); closed{
+		return fmt.Errorf("[IPC] module's send channel has been closed, can't send")
+	}
+
+	return nil
 }
 
 func (i *Ipc) SendAndRecvBlock(msg *Message, timeout time.Duration) (*Message, error) {
-	i.SendMsg(msg)
+	if err := i.SendMsg(msg); err != nil {
+		return nil, err
+	}
 
 	rspCh := make(chan *Message)
 	i.cache.Store(msg.MsgId, rspCh)
@@ -127,10 +133,6 @@ func (i *Ipc) SendAndRecvBlock(msg *Message, timeout time.Duration) (*Message, e
 		i.cache.Delete(msg.MsgId)
 		close(rspCh)
 		err := fmt.Errorf("get response timeout")
-		rsp := &Message{
-			MsgId: msg.MsgId,
-			Err: err,
-		}
-		return rsp, err
+		return nil, err
 	}
 }
