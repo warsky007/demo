@@ -1,0 +1,28 @@
+syntax="proto3";
+package pb;
+option go_package = "github.com/warsky007/demo/logkitd/common/pb";
+
+enum TypeName {
+    GetOs = 0;
+    GetPid = 1;
+}
+
+message Request {
+    TypeName type = 1;
+}
+
+message Response {
+    TypeName type = 1;
+    OsInfoRsp os = 2;
+    PidRsp pid = 3;
+    string error = 10;
+}
+
+message OsInfoRsp{
+    string os = 1;
+    string arch = 2;
+}
+
+message PidRsp {
+    int32 pid = 1;
+}
