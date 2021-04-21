@@ -9,25 +9,24 @@ import (
 	"time"
 )
 
-func CreateIpc(read io.ReadCloser, write io.WriteCloser, split bufio.SplitFunc) *Ipc {
+func CreateIpc(read io.ReadCloser, write io.WriteCloser, serialize Serialization) *Ipc {
 	return &Ipc{
-		reader:  read,
-		writer:  write,
-		RecvCh:  make(chan *Message, 1),
-		SendCh:  make(chan *Message, 1),
-		status:  Running,
-		wg:      sync.WaitGroup{},
-		split:   split,
+		reader:    read,
+		writer:    write,
+		RecvCh:    make(chan *Message, 1),
+		SendCh:    make(chan *Message, 1),
+		status:    Running,
+		wg:        sync.WaitGroup{},
+		split:     SplitMessages,
+		serialize: serialize,
 	}
 }
 
-func (i *Ipc) Start() (err error) {
+func (i *Ipc) Start() {
 	i.wg.Add(1)
 	go i.read()
 	i.wg.Add(1)
 	go i.write()
-
-	return
 }
 
 func SafeSend(ch chan *Message, value *Message) (closed bool) {
@@ -54,7 +53,7 @@ func (i *Ipc) read() {
 			if tmp, ok := i.cache.Load(msg.MsgId); ok {
 				ch = tmp.(chan *Message)
 			}
-			if closed := SafeSend(ch, msg); closed{
+			if closed := SafeSend(ch, msg); closed {
 				log.Printf("[IPC] module's receive channel has been closed\n")
 				return
 			}
@@ -70,7 +69,7 @@ func (i *Ipc) write() {
 	defer i.wg.Done()
 
 	for i.status == Running {
-		msg, ok := <- i.SendCh
+		msg, ok := <-i.SendCh
 		if ok {
 			bytes := Encode(msg)
 			_, err := i.writer.Write(bytes)
@@ -87,7 +86,7 @@ func (i *Ipc) write() {
 	log.Printf("[IPC] module's write gorountine exit\n")
 }
 
-func(i *Ipc) GetMsgId() uint32 {
+func (i *Ipc) GetMsgId() uint32 {
 	i.m.Lock()
 	defer i.m.Unlock()
 	i.id += 1
@@ -99,17 +98,46 @@ func (i *Ipc) Stop() {
 	close(i.SendCh)
 	i.wg.Wait()
 	close(i.RecvCh)
+	// TODO close reader and writer
+	// 因为项目中默认使用的是匿名管道，cmd模块会自动帮忙close，所以这里不需要close
+	// 如果换用了其它的ipc方式，记得要close，否则会导致句柄泄露
 	i.status = Closed
 	return
 }
 
-func (i *Ipc) SendMsg(msg *Message) error {
-	if msg.MsgId == 0 {
-		id := i.GetMsgId()
-		msg.MsgId = id
+func (i *Ipc) Marshal(v interface{}) ([]byte, error) {
+	return i.serialize.Marshal(v)
+}
+
+func (i *Ipc) Unmarshal(data []byte, v interface{}) error {
+	return i.serialize.Unmarshal(data, v)
+}
+
+func (i *Ipc) ToString(v interface{}) string {
+	str, _ := i.serialize.ToString(v)
+	return str
+}
+
+func (i *Ipc) ToMessage(v interface{}, id uint32) (*Message, error) {
+	data, err := i.serialize.Marshal(v)
+	if err != nil {
+		return nil, err
 	}
 
-	if closed := SafeSend(i.SendCh, msg); closed{
+	if id == 0 {
+		id = i.GetMsgId()
+	}
+
+	msg := &Message{
+		MsgId: id,
+		Data: data,
+	}
+
+	return msg, nil
+}
+
+func (i *Ipc) SendMsg(msg *Message) error {
+	if closed := SafeSend(i.SendCh, msg); closed {
 		return fmt.Errorf("[IPC] module's send channel has been closed, can't send")
 	}
 

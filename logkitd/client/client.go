@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/golang/protobuf/proto"
 	"github.com/warsky007/demo/logkitd/common/ipc"
 	"github.com/warsky007/demo/logkitd/common/pb"
 	"log"
@@ -44,32 +43,27 @@ func main() {
 	pipe := os.Stdout
 	os.Stdout = os.Stderr
 
-	ipcs := ipc.CreateIpc(os.Stdin, pipe, ipc.SplitMessages)
-	err := ipcs.Start()
-	if err != nil {
-		log.Fatalf("start ipc module fail: %v", err)
-	}
+	serialize := pb.NewPb()
+	ipcs := ipc.CreateIpc(os.Stdin, pipe, serialize)
+	ipcs.Start()
 
 	for msg := range ipcs.RecvCh {
 		req := &pb.Request{}
-		err := proto.Unmarshal(msg.Data, req)
+		err := ipcs.Unmarshal(msg.Data, req)
 		if err != nil {
 			log.Printf("can't decode msg: %v", err)
 			continue
 		}
 
-		rspMsg := &ipc.Message{
-			MsgId: msg.MsgId,
-		}
 		rsp, err := handle(req)
 		if err != nil {
 			rsp.Error = err.Error()
 		}
-		data, err := proto.Marshal(rsp)
+		rspMsg, err := ipcs.ToMessage(rsp, msg.MsgId)
 		if err != nil {
 			log.Printf("marshal response msg fail: %v", err)
+			continue
 		}
-		rspMsg.Data = data
 		ipcs.SendMsg(rspMsg)
 	}
 

@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"github.com/golang/protobuf/proto"
 	"github.com/warsky007/demo/logkitd/common/ipc"
 	"github.com/warsky007/demo/logkitd/common/pb"
 	"log"
@@ -26,36 +25,31 @@ func main() {
 		}
 	}()
 
-	ipcs := ipc.CreateIpc(out, in, ipc.SplitMessages)
-	err := ipcs.Start()
-	if err != nil {
-		log.Fatalf("start ipc module fail: %v", err)
-	}
+	serialize := pb.NewPb()
+	ipcs := ipc.CreateIpc(out, in, serialize)
+	ipcs.Start()
 
 	// block example
 	osReq := &pb.Request{
-		Type: pb.TypeName_GetPid,
+		Type: pb.TypeName_GetOs,
 	}
-	data, err := proto.Marshal(osReq)
+	msg, err := ipcs.ToMessage(osReq, 0)
 	if err != nil {
 		log.Fatal(err)
 	}
-	msg := &ipc.Message{
-		Data: data,
-	}
-
 	resp, err := ipcs.SendAndRecvBlock(msg, time.Second)
 	if err != nil {
 		log.Fatal(err)
 	}
 	rsp := &pb.Response{}
-	err = proto.Unmarshal(resp.Data, rsp)
+	err = ipcs.Unmarshal(resp.Data, rsp)
 	if err != nil {
 		log.Fatal(err)
 	}
 	log.Printf("response error: %s", rsp.GetError())
 	log.Printf("got pid %d\n", rsp.GetPid().GetPid())
 	log.Printf("got os %s arch %s\n", rsp.GetOs().GetOs(), rsp.GetOs().GetArch())
+	log.Println("message:", ipcs.ToString(rsp))
 
 	cmd.Process.Kill()
 	cmd.Wait()
