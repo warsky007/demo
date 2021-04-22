@@ -1,0 +1,20 @@
+syntax="proto3";
+package pb;
+option go_package = "github.com/warsky007/demo/grpc/pb";
+
+service Greeter {
+  rpc GetOsInfo (Request) returns (OsInfoRsp) {}
+  rpc GetPid (Request) returns (PidRsp) {}
+}
+
+message Request {
+}
+
+message OsInfoRsp{
+    string os = 1;
+    string arch = 2;
+}
+
+message PidRsp {
+    int32 pid = 1;
+}
